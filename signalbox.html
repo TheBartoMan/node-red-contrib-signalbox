@@ -1,0 +1,164 @@
+<script type="text/javascript">
+    RED.nodes.registerType('signalbox', {
+        category: 'function',
+        color: '#c7a35a',
+        defaults: {
+            name: { value: "" },
+            colorThresholds: { value: true },
+            warnAfter: { value: 5, validate: RED.validators.number() },
+            warnAfterUnit: { value: "m" },
+            errorAfter: { value: 30, validate: RED.validators.number() },
+            errorAfterUnit: { value: "m" },
+            updateInterval: { value: 5, validate: RED.validators.number() },
+            updateIntervalUnit: { value: "s" },
+            trackTopPayloads: { value: true },
+            topPayloadsResetEvery: { value: 1, validate: RED.validators.number() },
+            topPayloadsResetEveryUnit: { value: "d" }
+        },
+        inputs: 1,
+        outputs: 1,
+        icon: "font-awesome/fa-train",
+        label: function () {
+            return this.name || "signalbox";
+        },
+        labelStyle: function () {
+            return this.name ? "node_label_italic" : "";
+        },
+        oneditprepare: function () {
+            function toggleThresholdRows() {
+                $('#signalbox-threshold-rows').toggle($('#node-input-colorThresholds').is(':checked'));
+            }
+            function toggleTopPayloadRows() {
+                $('#signalbox-toppayload-rows').toggle($('#node-input-trackTopPayloads').is(':checked'));
+            }
+            $('#node-input-colorThresholds').on('change', toggleThresholdRows);
+            $('#node-input-trackTopPayloads').on('change', toggleTopPayloadRows);
+            toggleThresholdRows();
+            toggleTopPayloadRows();
+        },
+        oneditsave: function () {
+            const u = { ms: 1, s: 1000, m: 60000, h: 3600000, d: 86400000 };
+            const warnMs = Number($('#node-input-warnAfter').val()) * u[$('#node-input-warnAfterUnit').val()];
+            const errMs = Number($('#node-input-errorAfter').val()) * u[$('#node-input-errorAfterUnit').val()];
+            if ($('#node-input-colorThresholds').is(':checked') && errMs > 0 && warnMs > 0 && errMs <= warnMs) {
+                RED.notify("'Error after' should be longer than 'Warn after'", { type: "warning", timeout: 4000 });
+            }
+        }
+    });
+</script>
+
+<script type="text/x-red" data-template-name="signalbox">
+    <div class="form-row">
+        <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="optional - used as its label in global.signalbox" style="width:60%">
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-updateInterval"><i class="fa fa-refresh"></i> Update every</label>
+        <input type="number" id="node-input-updateInterval" style="width:70px" min="0" step="any">
+        <select id="node-input-updateIntervalUnit" style="width:100px">
+            <option value="ms">ms</option>
+            <option value="s">seconds</option>
+            <option value="m">minutes</option>
+        </select>
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-colorThresholds" style="width:auto; display:inline">
+            <input type="checkbox" id="node-input-colorThresholds" style="display:inline-block; width:15px; vertical-align:baseline;">
+            <span>Change status color as it gets stale</span>
+        </label>
+    </div>
+    <div id="signalbox-threshold-rows">
+        <div class="form-row">
+            <label for="node-input-warnAfter"><i class="fa fa-exclamation-triangle" style="color:#d0a000"></i> Warn after</label>
+            <input type="number" id="node-input-warnAfter" style="width:70px" min="0" step="any">
+            <select id="node-input-warnAfterUnit" style="width:100px">
+                <option value="ms">ms</option>
+                <option value="s">seconds</option>
+                <option value="m">minutes</option>
+                <option value="h">hours</option>
+                <option value="d">days</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="node-input-errorAfter"><i class="fa fa-times-circle" style="color:#c00"></i> Error after</label>
+            <input type="number" id="node-input-errorAfter" style="width:70px" min="0" step="any">
+            <select id="node-input-errorAfterUnit" style="width:100px">
+                <option value="ms">ms</option>
+                <option value="s">seconds</option>
+                <option value="m">minutes</option>
+                <option value="h">hours</option>
+                <option value="d">days</option>
+            </select>
+        </div>
+    </div>
+
+    <hr/>
+
+    <div class="form-row">
+        <label for="node-input-trackTopPayloads" style="width:auto; display:inline">
+            <input type="checkbox" id="node-input-trackTopPayloads" style="display:inline-block; width:15px; vertical-align:baseline;">
+            <span>Track top 10 payloads by frequency</span>
+        </label>
+    </div>
+    <div id="signalbox-toppayload-rows">
+        <div class="form-row">
+            <label for="node-input-topPayloadsResetEvery"><i class="fa fa-undo"></i> Reset tally every</label>
+            <input type="number" id="node-input-topPayloadsResetEvery" style="width:70px" min="0" step="any">
+            <select id="node-input-topPayloadsResetEveryUnit" style="width:100px">
+                <option value="ms">ms</option>
+                <option value="s">seconds</option>
+                <option value="m">minutes</option>
+                <option value="h">hours</option>
+                <option value="d">days</option>
+            </select>
+        </div>
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="signalbox">
+    <p>Passes messages through completely unchanged. Its job is to watch the
+    traffic going past - like a signalman logging every train - and keep
+    stats on it, visible in its status badge and in context.</p>
+    <p>Drop it inline anywhere in a flow - nothing needs to be configured to
+    use it. Give it a <b>Name</b> if you want it to show up under a
+    friendly label in <code>global.signalbox</code>; otherwise it uses an
+    auto-generated one.</p>
+
+    <h3>Status badge</h3>
+    <p>Shows a compact live summary, e.g. <code>3s ago · 12/hr · 340/day</code>,
+    updating on the <b>Update every</b> interval - independent of how often
+    messages actually arrive.</p>
+    <ul>
+        <li><b>Green</b> - fresher than <code>Warn after</code></li>
+        <li><b>Yellow</b> - between <code>Warn after</code> and <code>Error after</code></li>
+        <li><b>Red</b> - older than <code>Error after</code></li>
+    </ul>
+    <p>Untick <b>Change status color as it gets stale</b> for a neutral blue
+    dot with text only.</p>
+
+    <h3>Node context: <code>signalbox</code></h3>
+    <p>Each instance writes a full snapshot to its own node context under
+    the key <code>signalbox</code>, containing hour/day/week/total counts,
+    the rolling average interval between messages, and (if enabled) the
+    top 10 payloads seen recently by frequency.</p>
+
+    <h3>Global context: <code>global.signalbox</code></h3>
+    <p>Every instance also writes its snapshot into a shared
+    <code>global.signalbox</code> object, keyed by node ID (each entry
+    carries its own <code>name</code> field so it's still easy to read).
+    This lets you inspect every signalbox in the whole instance from one
+    place - e.g. from a Function node:</p>
+    <pre>const all = global.get("signalbox");
+const busiest = Object.values(all).sort((a, b) => b.counts.day - a.counts.day)[0];</pre>
+
+    <h3>Top payload tracking</h3>
+    <p>The frequency tally resets on the <b>Reset tally every</b> interval
+    rather than tracking a true sliding window, and is capped at 500
+    distinct values (least-frequent evicted first) to keep memory bounded
+    if it's pointed at high-cardinality payloads (e.g. constantly-changing
+    sensor readings). Works best for payloads with a naturally small set
+    of repeating values - status strings, event names, error codes, and
+    similar.</p>
+</script>
