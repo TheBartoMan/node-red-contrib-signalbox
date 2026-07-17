@@ -18,9 +18,9 @@ Or use the `Manage Palette` command in the Node-RED editor.
 ## Usage
 
 Wire it into any point in a flow - one input, one output, message
-unchanged. Optionally give it a **Name**, which is used as its label
-inside `global.signalbox` (see below); if left blank, an auto-generated
-label is used instead.
+unchanged. Optionally give it a **Name** to identify it within its
+group's combined stats, and a **Group** (see below) to combine its
+numbers with other signalboxes.
 
 ### Status badge
 
@@ -59,16 +59,36 @@ Each instance writes a snapshot to its own node context under the key
 }
 ```
 
-### Global context: `global.signalbox`
+### Grouping and combined global stats
 
-Every instance also writes its snapshot into a single shared
-`global.signalbox` object, keyed by node ID - so you can see every
-signalbox in the whole Node-RED instance from one place:
+Every signalbox with the same **Group** combines into one shared
+aggregate under `global['signalbox-<group>']` - or `global.signalbox`
+if **Group** is left blank. This is the combined view across every
+member, not a separate entry per node:
 
 ```js
-const all = global.get("signalbox");
-const busiest = Object.values(all).sort((a, b) => b.counts.day - a.counts.day)[0];
+{
+  counts: { hour: 40, day: 1180, week: 7350, total: 210044 },  // summed across the group
+  busiest: { id: "<node id>", name: "back yard camera", dayCount: 640 },
+  topPayloads: [ { value: "\"motion\"", count: 820 }, ... ],   // merged across the group
+  members: {
+    "<node id 1>": { name: "front door camera", counts: {...}, ... },
+    "<node id 2>": { name: "back yard camera", counts: {...}, ... }
+  },
+  updated: 1737000005000
+}
 ```
+
+From a Function node:
+
+```js
+const cameras = global.get("signalbox-cameras");
+console.log(cameras.busiest, cameras.counts.day, cameras.topPayloads);
+```
+
+Members that stop reporting (deleted, or moved to a different group)
+drop out of the aggregate automatically after 5 minutes of silence, so
+removed nodes don't permanently inflate the group's totals.
 
 ### Top payload tracking
 

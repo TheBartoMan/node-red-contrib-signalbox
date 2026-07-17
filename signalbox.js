@@ -51,6 +51,54 @@ module.exports = function (RED) {
             .map(([value, count]) => ({ value, count }));
     }
 
+    function slugify(s) {
+        return String(s).trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-_]/g, "");
+    }
+
+    const STALE_MEMBER_MS = 5 * 60 * 1000; // drop members that haven't reported in 5 minutes
+
+    function pruneStale(members, now) {
+        for (const id of Object.keys(members)) {
+            if (now - (members[id].updated || 0) > STALE_MEMBER_MS) {
+                delete members[id];
+            }
+        }
+    }
+
+    function sumCounts(members) {
+        const totals = { hour: 0, day: 0, week: 0, total: 0 };
+        for (const m of Object.values(members)) {
+            if (!m.counts) continue;
+            totals.hour += m.counts.hour || 0;
+            totals.day += m.counts.day || 0;
+            totals.week += m.counts.week || 0;
+            totals.total += m.counts.total || 0;
+        }
+        return totals;
+    }
+
+    function findBusiest(members) {
+        let best = null;
+        for (const [id, m] of Object.entries(members)) {
+            const dayCount = (m.counts && m.counts.day) || 0;
+            if (!best || dayCount > best.dayCount) {
+                best = { id: id, name: m.name, dayCount: dayCount };
+            }
+        }
+        return best;
+    }
+
+    function mergeTopPayloads(members) {
+        const merged = new Map();
+        for (const m of Object.values(members)) {
+            if (!m.topPayloads) continue;
+            for (const entry of m.topPayloads) {
+                merged.set(entry.value, (merged.get(entry.value) || 0) + entry.count);
+            }
+        }
+        return topN(merged, TOP_N);
+    }
+
     function SignalboxNode(config) {
         RED.nodes.createNode(this, config);
         const node = this;
@@ -61,6 +109,8 @@ module.exports = function (RED) {
         node.updateIntervalMs = toMs(config.updateInterval, config.updateIntervalUnit) || 5000;
         node.trackTopPayloads = !!config.trackTopPayloads;
         node.topPayloadsResetMs = toMs(config.topPayloadsResetEvery, config.topPayloadsResetEveryUnit) || 86400000;
+        node.group = slugify(config.group || "");
+        const globalKey = "signalbox" + (node.group ? "-" + node.group : "");
 
         const displayName = config.name || ("signalbox:" + node.id.slice(0, 8));
 
@@ -161,12 +211,23 @@ module.exports = function (RED) {
 
             try {
                 const globalContext = node.context().global;
-                let all = await Promise.resolve(globalContext.get("signalbox"));
-                if (!all || typeof all !== "object") all = {};
-                all[node.id] = snapshot;
-                await Promise.resolve(globalContext.set("signalbox", all));
+                let combined = await Promise.resolve(globalContext.get(globalKey));
+                if (!combined || typeof combined !== "object") combined = { members: {} };
+                if (!combined.members || typeof combined.members !== "object") combined.members = {};
+
+                combined.members[node.id] = snapshot;
+                pruneStale(combined.members, now);
+
+                combined.counts = sumCounts(combined.members);
+                combined.busiest = findBusiest(combined.members);
+                if (node.trackTopPayloads) {
+                    combined.topPayloads = mergeTopPayloads(combined.members);
+                }
+                combined.updated = now;
+
+                await Promise.resolve(globalContext.set(globalKey, combined));
             } catch (err) {
-                node.warn("signalbox: could not write global.signalbox: " + err.message);
+                node.warn("signalbox: could not write global." + globalKey + ": " + err.message);
             }
 
             showStatus(now);

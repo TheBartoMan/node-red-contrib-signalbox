@@ -13,7 +13,8 @@
             updateIntervalUnit: { value: "s" },
             trackTopPayloads: { value: true },
             topPayloadsResetEvery: { value: 1, validate: RED.validators.number() },
-            topPayloadsResetEveryUnit: { value: "d" }
+            topPayloadsResetEveryUnit: { value: "d" },
+            group: { value: "" }
         },
         inputs: 1,
         outputs: 1,
@@ -51,6 +52,11 @@
     <div class="form-row">
         <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
         <input type="text" id="node-input-name" placeholder="optional - used as its label in global.signalbox" style="width:60%">
+    </div>
+
+    <div class="form-row">
+        <label for="node-input-group"><i class="fa fa-object-group"></i> Group</label>
+        <input type="text" id="node-input-group" placeholder="optional - e.g. 'cameras' combines into global.signalbox-cameras" style="width:60%">
     </div>
 
     <div class="form-row">
@@ -122,9 +128,8 @@
     traffic going past - like a signalman logging every train - and keep
     stats on it, visible in its status badge and in context.</p>
     <p>Drop it inline anywhere in a flow - nothing needs to be configured to
-    use it. Give it a <b>Name</b> if you want it to show up under a
-    friendly label in <code>global.signalbox</code>; otherwise it uses an
-    auto-generated one.</p>
+    use it. Give it a <b>Name</b> to identify it inside its group's combined
+    stats; otherwise it uses an auto-generated one.</p>
 
     <h3>Status badge</h3>
     <p>Shows a compact live summary, e.g. <code>3s ago · 12/hr · 340/day</code>,
@@ -144,14 +149,25 @@
     the rolling average interval between messages, and (if enabled) the
     top 10 payloads seen recently by frequency.</p>
 
-    <h3>Global context: <code>global.signalbox</code></h3>
-    <p>Every instance also writes its snapshot into a shared
-    <code>global.signalbox</code> object, keyed by node ID (each entry
-    carries its own <code>name</code> field so it's still easy to read).
-    This lets you inspect every signalbox in the whole instance from one
-    place - e.g. from a Function node:</p>
-    <pre>const all = global.get("signalbox");
-const busiest = Object.values(all).sort((a, b) => b.counts.day - a.counts.day)[0];</pre>
+    <h3>Global context: combined group stats</h3>
+    <p>Every signalbox with the same <b>Group</b> combines into one shared
+    aggregate under <code>global['signalbox-&lt;group&gt;']</code> - or just
+    <code>global.signalbox</code> if <b>Group</b> is left blank. The combined
+    object contains:</p>
+    <ul>
+        <li><code>counts</code> - hour/day/week/total summed across every
+        member of the group</li>
+        <li><code>busiest</code> - which member had the most traffic today</li>
+        <li><code>topPayloads</code> - a merged top 10 across every member
+        (if enabled)</li>
+        <li><code>members</code> - each member's own individual snapshot,
+        keyed by node ID, for drilling in further</li>
+    </ul>
+    <p>From a Function node:</p>
+    <pre>const cameras = global.get("signalbox-cameras");
+console.log(cameras.busiest, cameras.counts.day, cameras.topPayloads);</pre>
+    <p>Members that stop reporting (deleted, or moved to a different group)
+    drop out of the aggregate automatically after a few minutes.</p>
 
     <h3>Top payload tracking</h3>
     <p>The frequency tally resets on the <b>Reset tally every</b> interval
